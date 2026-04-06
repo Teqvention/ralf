@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Multi-agent TDD development orchestrator",
   "bin": {
-    "ralf": "./ralf.ts"
+    "ralf": "./bin/ralf.js"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

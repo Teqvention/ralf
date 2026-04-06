@@ -22,8 +22,14 @@ export function runPreflight(): PreflightCheck[] {
   const checks: PreflightCheck[] = []
 
   checks.push(checkCommand("git", ["--version"], "git"))
-  checks.push(checkCommand("gh", ["--version"], "gh CLI"))
   checks.push(checkCommand("claude", ["--version"], "claude CLI"))
+
+  // Check GITHUB_TOKEN is set
+  if (process.env.GITHUB_TOKEN) {
+    checks.push({ name: "GITHUB_TOKEN", ok: true, message: "available" })
+  } else {
+    checks.push({ name: "GITHUB_TOKEN", ok: false, message: "GITHUB_TOKEN not set. Export it and try again." })
+  }
 
   // Check we're in a git repo
   try {

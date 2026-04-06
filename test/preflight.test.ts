@@ -20,7 +20,7 @@ describe("preflightPassed", () => {
   it("returns true when all checks pass", () => {
     const checks: PreflightCheck[] = [
       { name: "git", ok: true, message: "ok" },
-      { name: "gh", ok: true, message: "ok" },
+      { name: "GITHUB_TOKEN", ok: true, message: "ok" },
     ]
     expect(preflightPassed(checks)).toBe(true)
   })
@@ -28,7 +28,7 @@ describe("preflightPassed", () => {
   it("returns false when any check fails", () => {
     const checks: PreflightCheck[] = [
       { name: "git", ok: true, message: "ok" },
-      { name: "gh", ok: false, message: "not found" },
+      { name: "GITHUB_TOKEN", ok: false, message: "not found" },
     ]
     expect(preflightPassed(checks)).toBe(false)
   })
