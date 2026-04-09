@@ -8,9 +8,10 @@ interface CliCommands {
 interface CliOptions {
   argv: string[];
   commands: CliCommands;
+  print?: (msg: string) => void;
 }
 
-export async function cli({ argv, commands }: CliOptions): Promise<void> {
+export async function cli({ argv, commands, print = console.log }: CliOptions): Promise<void> {
   const [command, ...args] = argv;
 
   switch (command) {
@@ -30,6 +31,7 @@ export async function cli({ argv, commands }: CliOptions): Promise<void> {
       break;
     }
     default:
+      print("Usage: ralf <command>\n\nCommands:\n  run <number>    Run a trend issue\n  status          Show current status\n  revert <number> Revert a trend issue\n  init            Initialize configuration");
       break;
   }
 }

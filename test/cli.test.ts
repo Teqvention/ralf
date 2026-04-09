@@ -54,6 +54,28 @@ describe("cli", () => {
     )
   })
 
+  it("prints usage help listing all commands when given unknown command", async () => {
+    const output: string[] = []
+    const print = (msg: string) => { output.push(msg) }
+
+    await cli({
+      argv: ["foobar"],
+      commands: {
+        run: vi.fn(),
+        status: vi.fn(),
+        revert: vi.fn(),
+        init: vi.fn(),
+      },
+      print,
+    })
+
+    const helpText = output.join("\n")
+    expect(helpText).toContain("run")
+    expect(helpText).toContain("status")
+    expect(helpText).toContain("revert")
+    expect(helpText).toContain("init")
+  })
+
   it("routes 'revert <number>' to revertCommand with parsed issue number", async () => {
     const revertCommand = vi.fn().mockResolvedValue(undefined)
 
