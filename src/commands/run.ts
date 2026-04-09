@@ -1,17 +1,4 @@
-interface Issue {
-  number: number;
-  title: string;
-  body: string;
-}
-
-interface ProjectState {
-  getIssuesInOrder(): Promise<Issue[]>;
-  acquireLock(): Promise<void>;
-  releaseLock(): Promise<void>;
-  preflight(): Promise<unknown[]>;
-  markStuck(issue: Issue, reason: string): Promise<void>;
-  startIssue(issue: Issue): Promise<void>;
-}
+import type { Issue, ProjectState } from "../project-state/index.js";
 
 interface IssueEvent {
   type: string;
