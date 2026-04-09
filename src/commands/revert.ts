@@ -32,7 +32,7 @@ export async function revertCommand({ config, state, ui, issueNumber }: RevertCo
   const commits = await state.findCommitsForIssue(issueNumber);
 
   if (commits.length === 0) {
-    ui.emit({ type: "revert-no-commits", issueNumber });
+    ui.emit({ type: "error", issueNumber, message: `#${issueNumber}: no commits found to revert` });
     return;
   }
 
