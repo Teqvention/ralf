@@ -112,13 +112,12 @@ describe("validatePlan", () => {
     ).toThrow("Behavior 0")
   })
 
-  it("rejects behavior with wrong type", () => {
-    expect(() =>
-      validatePlan({
-        status: "plan",
-        behaviors: [{ name: "test", type: "integration" }],
-      })
-    ).toThrow('"unit" or "e2e"')
+  it("normalizes non-standard behavior type to unit", () => {
+    const plan = validatePlan({
+      status: "plan",
+      behaviors: [{ name: "test", type: "integration" }],
+    })
+    expect(plan.behaviors[0].type).toBe("unit")
   })
 })
 
