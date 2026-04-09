@@ -77,7 +77,7 @@ export function validatePlan(raw: unknown): PlanResult {
       throw new ValidationError(`Behavior ${i} must have a non-empty "name" string`)
     }
     if (b.type !== "unit" && b.type !== "e2e") {
-      throw new ValidationError(`Behavior ${i} type must be "unit" or "e2e", got "${b.type}"`)
+      b.type = "unit"
     }
   }
   return raw as PlanResult

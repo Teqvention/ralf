@@ -35,6 +35,7 @@ Read this test first. Your ONLY job is to make it pass.
 - Do NOT modify the test file — the test is the spec, your job is to make it green
 - Follow existing patterns in the codebase — explore before writing
 - Fix ALL typecheck and lint errors — including pre-existing ones if they block the build
+- Do NOT modify: eslint.config.js, tsconfig.json, vitest.config.ts, package.json (unless the issue explicitly requires it)
 - No placeholders, no TODO comments, no "will implement later"
 - Search before assuming something is missing — it might already exist
 

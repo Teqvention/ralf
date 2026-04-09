@@ -76,8 +76,7 @@ async function claude(prompt: string): Promise<ClaudeResponse> {
         result: string;
         session_id: string;
         is_error: boolean;
-        input_tokens?: number;
-        output_tokens?: number;
+        usage?: { input_tokens?: number; output_tokens?: number };
       };
       sessionId = json.session_id;
       if (json.is_error) {
@@ -87,8 +86,8 @@ async function claude(prompt: string): Promise<ClaudeResponse> {
         }
         throw new Error(json.result);
       }
-      const tokensIn = json.input_tokens ?? 0;
-      const tokensOut = json.output_tokens ?? 0;
+      const tokensIn = json.usage?.input_tokens ?? 0;
+      const tokensOut = json.usage?.output_tokens ?? 0;
       return { result: json.result, tokensIn, tokensOut };
     } catch (e: unknown) {
       const msg = formatError(e);

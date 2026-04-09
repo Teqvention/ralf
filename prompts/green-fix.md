@@ -26,6 +26,7 @@ requires: [RALF_MD, ISSUE_TITLE, ISSUE_BODY, ARCH_BRIEF, FIX_ITEMS]
 - Do NOT refactor other code
 - Do NOT add features beyond the fixes
 - Do NOT modify test files unless a fix item specifically requires it
+- Do NOT modify: eslint.config.js, tsconfig.json, vitest.config.ts, package.json (unless a fix item explicitly requires it)
 - Fix ALL typecheck and lint errors — including pre-existing ones if they block the build
 - No placeholders, no TODO comments
 - Search before assuming something is missing
