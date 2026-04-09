@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest"
-import { mkdtempSync, rmSync, mkdirSync, readFileSync } from "node:fs"
+import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { acquireLock } from "../src/project-state/index.js"
@@ -25,5 +25,24 @@ describe("acquireLock", () => {
     expect(lockContent.pid).toBe(process.pid)
     expect(typeof lockContent.timestamp).toBe("string")
     expect(new Date(lockContent.timestamp).getTime()).not.toBeNaN()
+  })
+
+  it("throws descriptive error when lock exists and owning process is alive", async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "ralf-lock-test-"))
+    const ralfDir = join(tempDir, ".ralf")
+    mkdirSync(ralfDir, { recursive: true })
+
+    // Write a lock file owned by the current process (which is definitely alive)
+    const lockPath = join(ralfDir, ".lock")
+    writeFileSync(lockPath, JSON.stringify({
+      pid: process.pid,
+      timestamp: new Date().toISOString(),
+    }))
+
+    const error = await acquireLock({ projectDir: tempDir }).catch((e: Error) => e)
+
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toMatch(/lock/i)
+    expect((error as Error).message).toMatch(String(process.pid))
   })
 })
