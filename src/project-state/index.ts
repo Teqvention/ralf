@@ -6,6 +6,21 @@ interface LockOptions {
   force?: boolean;
 }
 
+interface Issue {
+  number: number;
+  title: string;
+  body: string;
+}
+
+interface ProjectState {
+  getIssuesInOrder(): Promise<Issue[]>;
+  acquireLock(): Promise<void>;
+  releaseLock(): Promise<void>;
+  preflight(): Promise<unknown[]>;
+  markStuck(issue: Issue, reason: string): Promise<void>;
+  startIssue(issue: Issue): Promise<void>;
+}
+
 function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -44,4 +59,15 @@ export async function acquireLock({ projectDir, force }: LockOptions): Promise<v
 export async function releaseLock({ projectDir }: Pick<LockOptions, "projectDir">): Promise<void> {
   const lockPath = join(projectDir, ".ralf", ".lock");
   rmSync(lockPath, { force: true });
+}
+
+export function createProjectState({ projectDir }: { projectDir: string }): ProjectState {
+  return {
+    acquireLock: () => acquireLock({ projectDir }),
+    releaseLock: () => releaseLock({ projectDir }),
+    getIssuesInOrder: async () => [],
+    preflight: async () => [],
+    startIssue: async () => {},
+    markStuck: async () => {},
+  };
 }
