@@ -42,6 +42,7 @@ export async function revertCommand({ config, state, ui, issueNumber }: RevertCo
     await state.revertIssue(issueNumber);
     await state.deleteBranch(issueNumber);
     await state.resetLabel(issueNumber, config.statuses.todo);
+    ui.emit({ type: "revert-complete", issueNumber });
   } else {
     ui.emit({ type: "revert-aborted", issueNumber });
   }
