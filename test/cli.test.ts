@@ -35,4 +35,22 @@ describe("cli", () => {
 
     expect(statusCommand).toHaveBeenCalledOnce()
   })
+
+  it("routes 'revert <number>' to revertCommand with parsed issue number", async () => {
+    const revertCommand = vi.fn().mockResolvedValue(undefined)
+
+    await cli({
+      argv: ["revert", "17"],
+      commands: {
+        run: vi.fn(),
+        status: vi.fn(),
+        revert: revertCommand,
+        init: vi.fn(),
+      },
+    })
+
+    expect(revertCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ issueNumber: 17 }),
+    )
+  })
 })

@@ -1,7 +1,7 @@
 interface CliCommands {
   run: (opts: { issueNumber: number }) => Promise<void>;
   status: () => Promise<void>;
-  revert: () => Promise<void>;
+  revert: (opts: { issueNumber: number }) => Promise<void>;
   init: () => Promise<void>;
 }
 
@@ -21,6 +21,11 @@ export async function cli({ argv, commands }: CliOptions): Promise<void> {
     }
     case "status": {
       await commands.status();
+      break;
+    }
+    case "revert": {
+      const issueNumber = Number(args[0]);
+      await commands.revert({ issueNumber });
       break;
     }
     default:
