@@ -39,3 +39,17 @@ export async function cli({ argv, commands, print = console.log }: CliOptions): 
       break;
   }
 }
+
+// Entry point when executed directly via bin/ralf.js
+if (process.argv[1] && /cli\.ts$/.test(process.argv[1].replace(/\\/g, "/"))) {
+  const noop = async () => {};
+  await cli({
+    argv: process.argv.slice(2),
+    commands: {
+      run: noop as CliCommands["run"],
+      status: noop,
+      revert: noop as CliCommands["revert"],
+      init: noop,
+    },
+  });
+}

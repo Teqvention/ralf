@@ -22,6 +22,7 @@ export default tseslint.config(
     rules: {
       "require-yield": "off",
       "@typescript-eslint/no-non-null-assertion": "off",
+      "@typescript-eslint/no-unused-vars": "off",
     },
   },
   {
