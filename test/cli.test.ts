@@ -19,4 +19,20 @@ describe("cli", () => {
       expect.objectContaining({ issueNumber: 42 }),
     )
   })
+
+  it("routes 'status' to statusCommand", async () => {
+    const statusCommand = vi.fn().mockResolvedValue(undefined)
+
+    await cli({
+      argv: ["status"],
+      commands: {
+        run: vi.fn(),
+        status: statusCommand,
+        revert: vi.fn(),
+        init: vi.fn(),
+      },
+    })
+
+    expect(statusCommand).toHaveBeenCalledOnce()
+  })
 })

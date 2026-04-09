@@ -19,6 +19,10 @@ export async function cli({ argv, commands }: CliOptions): Promise<void> {
       await commands.run({ issueNumber });
       break;
     }
+    case "status": {
+      await commands.status();
+      break;
+    }
     default:
       break;
   }
