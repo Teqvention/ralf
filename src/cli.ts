@@ -30,6 +30,10 @@ export async function cli({ argv, commands, print = console.log }: CliOptions): 
       await commands.revert({ issueNumber });
       break;
     }
+    case "init": {
+      await commands.init();
+      break;
+    }
     default:
       print("Usage: ralf <command>\n\nCommands:\n  run <number>    Run a trend issue\n  status          Show current status\n  revert <number> Revert a trend issue\n  init            Initialize configuration");
       break;

@@ -76,6 +76,22 @@ describe("cli", () => {
     expect(helpText).toContain("init")
   })
 
+  it("routes 'init' to initCommand", async () => {
+    const initCommand = vi.fn().mockResolvedValue(undefined)
+
+    await cli({
+      argv: ["init"],
+      commands: {
+        run: vi.fn(),
+        status: vi.fn(),
+        revert: vi.fn(),
+        init: initCommand,
+      },
+    })
+
+    expect(initCommand).toHaveBeenCalledOnce()
+  })
+
   it("routes 'revert <number>' to revertCommand with parsed issue number", async () => {
     const revertCommand = vi.fn().mockResolvedValue(undefined)
 
