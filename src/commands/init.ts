@@ -20,6 +20,24 @@ export async function initCommand({ projectDir }: InitCommandOptions): Promise<v
   mkdirSync(ralfDir, { recursive: true })
   writeFileSync(join(ralfDir, "config.json"), JSON.stringify(CONFIG_TEMPLATE, null, 2) + "\n")
 
+  writeFileSync(
+    join(ralfDir, "RALF.md"),
+    `# Project
+
+## Overview
+
+<!-- Describe your project here -->
+
+## Architecture
+
+<!-- Describe the architecture here -->
+
+## Development
+
+<!-- Describe development workflows here -->
+`,
+  )
+
   const promptsDestDir = join(ralfDir, "prompts")
   mkdirSync(promptsDestDir, { recursive: true })
   const promptFiles = readdirSync(PROMPTS_SOURCE_DIR).filter((f) => f.endsWith(".md"))

@@ -31,6 +31,20 @@ describe("initCommand", () => {
     expect(Array.isArray(config.checks)).toBe(true)
   })
 
+  it("creates .ralf/RALF.md with placeholder sections", async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "ralf-init-test-"))
+
+    await initCommand({ projectDir: tempDir })
+
+    const ralfMdPath = join(tempDir, ".ralf", "RALF.md")
+    expect(existsSync(ralfMdPath)).toBe(true)
+
+    const content = readFileSync(ralfMdPath, "utf-8")
+    // RALF.md should contain placeholder sections for project documentation
+    expect(content).toContain("# ")
+    expect(content.length).toBeGreaterThan(0)
+  })
+
   it("copies prompt templates from prompts/ into .ralf/prompts/", async () => {
     tempDir = mkdtempSync(join(tmpdir(), "ralf-init-test-"))
 
