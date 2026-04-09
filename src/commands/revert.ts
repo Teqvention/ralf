@@ -16,9 +16,7 @@ interface RevertUI {
 }
 
 interface RevertConfig {
-  repo: string;
-  projectNumber: number;
-  statuses: Record<string, string>;
+  statuses: { todo: string };
 }
 
 interface RevertCommandOptions {

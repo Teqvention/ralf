@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest"
 import { statusCommand } from "../../src/commands/status.js"
 import { revertCommand } from "../../src/commands/revert.js"
 
-describe("statusCommand and revertCommand integration", () => {
+describe("status and revert commands with shared mock state", () => {
   it("status shows counts, then revert reverts an issue and status reflects the change", async () => {
     // Shared mutable counts simulate real project state
     const counts: Record<string, number> = {

@@ -7,8 +7,6 @@ interface StatusUI {
 }
 
 interface StatusConfig {
-  repo: string;
-  projectNumber: number;
   statuses: Record<string, string>;
 }
 
