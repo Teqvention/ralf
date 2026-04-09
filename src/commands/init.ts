@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 
 interface InitCommandOptions {
   projectDir: string
+  promptsSourceDir?: string
 }
 
 const CONFIG_TEMPLATE = {
@@ -13,9 +14,9 @@ const CONFIG_TEMPLATE = {
 }
 
 const __dirname = resolve(fileURLToPath(import.meta.url), "..")
-const PROMPTS_SOURCE_DIR = resolve(__dirname, "..", "..", "prompts")
+const DEFAULT_PROMPTS_SOURCE_DIR = resolve(__dirname, "..", "..", "prompts")
 
-export async function initCommand({ projectDir }: InitCommandOptions): Promise<void> {
+export async function initCommand({ projectDir, promptsSourceDir = DEFAULT_PROMPTS_SOURCE_DIR }: InitCommandOptions): Promise<void> {
   const ralfDir = join(projectDir, ".ralf")
   mkdirSync(ralfDir, { recursive: true })
   writeFileSync(join(ralfDir, "config.json"), JSON.stringify(CONFIG_TEMPLATE, null, 2) + "\n")
@@ -40,8 +41,8 @@ export async function initCommand({ projectDir }: InitCommandOptions): Promise<v
 
   const promptsDestDir = join(ralfDir, "prompts")
   mkdirSync(promptsDestDir, { recursive: true })
-  const promptFiles = readdirSync(PROMPTS_SOURCE_DIR).filter((f) => f.endsWith(".md"))
+  const promptFiles = readdirSync(promptsSourceDir).filter((f) => f.endsWith(".md"))
   for (const file of promptFiles) {
-    copyFileSync(join(PROMPTS_SOURCE_DIR, file), join(promptsDestDir, file))
+    copyFileSync(join(promptsSourceDir, file), join(promptsDestDir, file))
   }
 }

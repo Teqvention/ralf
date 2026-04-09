@@ -6,13 +6,13 @@ interface LockOptions {
   force?: boolean;
 }
 
-interface Issue {
+export interface Issue {
   number: number;
   title: string;
   body: string;
 }
 
-interface ProjectState {
+export interface ProjectState {
   getIssuesInOrder(): Promise<Issue[]>;
   acquireLock(): Promise<void>;
   releaseLock(): Promise<void>;
@@ -65,9 +65,9 @@ export function createProjectState({ projectDir }: { projectDir: string }): Proj
   return {
     acquireLock: () => acquireLock({ projectDir }),
     releaseLock: () => releaseLock({ projectDir }),
-    getIssuesInOrder: async () => [],
-    preflight: async () => [],
-    startIssue: async () => {},
-    markStuck: async () => {},
+    getIssuesInOrder: () => { throw new Error("not implemented"); },
+    preflight: () => { throw new Error("not implemented"); },
+    startIssue: () => { throw new Error("not implemented"); },
+    markStuck: () => { throw new Error("not implemented"); },
   };
 }

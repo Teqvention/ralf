@@ -66,6 +66,40 @@ describe("acquireLock", () => {
     expect((error as Error).message).toMatch(/lock/i)
     expect((error as Error).message).toMatch(String(process.pid))
   })
+
+  it("succeeds when lock exists but owning process is dead (stale lock)", async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "ralf-lock-test-"))
+    const ralfDir = join(tempDir, ".ralf")
+    mkdirSync(ralfDir, { recursive: true })
+
+    const lockPath = join(ralfDir, ".lock")
+    writeFileSync(lockPath, JSON.stringify({
+      pid: 999999,
+      timestamp: new Date().toISOString(),
+    }))
+
+    await acquireLock({ projectDir: tempDir })
+
+    const lockContent = JSON.parse(readFileSync(lockPath, "utf-8"))
+    expect(lockContent.pid).toBe(process.pid)
+  })
+
+  it("succeeds with --force when lock exists and owning process is dead", async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "ralf-lock-test-"))
+    const ralfDir = join(tempDir, ".ralf")
+    mkdirSync(ralfDir, { recursive: true })
+
+    const lockPath = join(ralfDir, ".lock")
+    writeFileSync(lockPath, JSON.stringify({
+      pid: 999999,
+      timestamp: new Date().toISOString(),
+    }))
+
+    await acquireLock({ projectDir: tempDir, force: true })
+
+    const lockContent = JSON.parse(readFileSync(lockPath, "utf-8"))
+    expect(lockContent.pid).toBe(process.pid)
+  })
 })
 
 describe("releaseLock", () => {
