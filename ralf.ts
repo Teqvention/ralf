@@ -333,10 +333,9 @@ function safeCheckout(branch: string, issueNum?: number): void {
 function ensureDevBranch(issueNum?: number): void {
   if (branchExists("dev")) {
     safeCheckout("dev", issueNum);
-    try { git("pull", "origin", "dev"); } catch { /* offline or no remote */ }
   } else {
     git("checkout", "-b", "dev");
-    try { git("push", "-u", "origin", "dev"); } catch { /* offline */ }
+    // no push — keep local only
   }
 }
 
@@ -684,10 +683,9 @@ async function mergeAndClose(
     return false;
   }
   git("branch", "-d", branchName);
-  git("push", "origin", "dev");
   await setStatus(issueNum, statuses.done, repo, projectNumber);
   await github.closeIssue(issueNum, repo);
-  console.log("\n✔ Issue #" + issueNum + " complete → merged to dev, pushed");
+  console.log("\n✔ Issue #" + issueNum + " complete → merged to dev");
   console.log("  " + tokenTracker.formatIssueUsage(issueNum));
   return true;
 }
