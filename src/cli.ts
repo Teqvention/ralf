@@ -11,12 +11,25 @@ interface CliOptions {
   print?: (msg: string) => void;
 }
 
+const HELP_TEXT = "Usage: ralf <command>\n\nCommands:\n  run <number>    Run a trend issue\n  status          Show current status\n  revert <number> Revert a trend issue\n  init            Initialize configuration";
+
+function parseIssueNumber(raw: string | undefined): number | null {
+  if (raw == null) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1 || n !== Math.floor(n)) return null;
+  return n;
+}
+
 export async function cli({ argv, commands, print = console.log }: CliOptions): Promise<void> {
   const [command, ...args] = argv;
 
   switch (command) {
     case "run": {
-      const issueNumber = Number(args[0]);
+      const issueNumber = parseIssueNumber(args[0]);
+      if (issueNumber == null) {
+        print("Error: 'run' requires a valid issue number.\n\n" + HELP_TEXT);
+        return;
+      }
       const dryRun = args.includes("--dry-run");
       await commands.run({ issueNumber, ...(dryRun && { dryRun }) });
       break;
@@ -26,7 +39,11 @@ export async function cli({ argv, commands, print = console.log }: CliOptions): 
       break;
     }
     case "revert": {
-      const issueNumber = Number(args[0]);
+      const issueNumber = parseIssueNumber(args[0]);
+      if (issueNumber == null) {
+        print("Error: 'revert' requires a valid issue number.\n\n" + HELP_TEXT);
+        return;
+      }
       await commands.revert({ issueNumber });
       break;
     }
@@ -35,21 +52,8 @@ export async function cli({ argv, commands, print = console.log }: CliOptions): 
       break;
     }
     default:
-      print("Usage: ralf <command>\n\nCommands:\n  run <number>    Run a trend issue\n  status          Show current status\n  revert <number> Revert a trend issue\n  init            Initialize configuration");
+      print(HELP_TEXT);
       break;
   }
 }
 
-// Entry point when executed directly via bin/ralf.js
-if (process.argv[1] && /cli\.ts$/.test(process.argv[1].replace(/\\/g, "/"))) {
-  const noop = async () => {};
-  await cli({
-    argv: process.argv.slice(2),
-    commands: {
-      run: noop as CliCommands["run"],
-      status: noop,
-      revert: noop as CliCommands["revert"],
-      init: noop,
-    },
-  });
-}

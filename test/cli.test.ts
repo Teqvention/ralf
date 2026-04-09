@@ -92,6 +92,46 @@ describe("cli", () => {
     expect(initCommand).toHaveBeenCalledOnce()
   })
 
+  it("prints error when 'run' is called without an issue number", async () => {
+    const output: string[] = []
+    const print = (msg: string) => { output.push(msg) }
+    const runCommand = vi.fn()
+
+    await cli({
+      argv: ["run"],
+      commands: {
+        run: runCommand,
+        status: vi.fn(),
+        revert: vi.fn(),
+        init: vi.fn(),
+      },
+      print,
+    })
+
+    expect(runCommand).not.toHaveBeenCalled()
+    expect(output.join("\n")).toContain("requires a valid issue number")
+  })
+
+  it("prints error when 'revert' is called without an issue number", async () => {
+    const output: string[] = []
+    const print = (msg: string) => { output.push(msg) }
+    const revertCommand = vi.fn()
+
+    await cli({
+      argv: ["revert"],
+      commands: {
+        run: vi.fn(),
+        status: vi.fn(),
+        revert: revertCommand,
+        init: vi.fn(),
+      },
+      print,
+    })
+
+    expect(revertCommand).not.toHaveBeenCalled()
+    expect(output.join("\n")).toContain("requires a valid issue number")
+  })
+
   it("routes 'revert <number>' to revertCommand with parsed issue number", async () => {
     const revertCommand = vi.fn().mockResolvedValue(undefined)
 

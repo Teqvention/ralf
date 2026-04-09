@@ -933,18 +933,22 @@ async function status(): Promise<void> {
 
 // --- cli ---
 
-const [cmd, arg] = process.argv.slice(2);
+import { cli } from "./src/cli.js";
 
 try {
-  if (cmd === "run" && arg) {
-    await run(Number.parseInt(arg.replace("#", ""), 10));
-  } else if (cmd === "status") {
-    await status();
-  } else {
-    console.log("Usage:");
-    console.log("  ralf run <issue-number>");
-    console.log("  ralf status");
-  }
+  await cli({
+    argv: process.argv.slice(2),
+    commands: {
+      run: async ({ issueNumber }) => { await run(issueNumber); },
+      status: async () => { await status(); },
+      revert: async ({ issueNumber }) => {
+        console.log("revert #" + issueNumber + " — not yet implemented");
+      },
+      init: async () => {
+        console.log("init — not yet implemented");
+      },
+    },
+  });
 } catch (e: unknown) {
   console.error("\n✘ Fatal error: " + formatError(e));
   process.exit(1);

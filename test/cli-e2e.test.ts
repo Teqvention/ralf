@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { fork } from "node:child_process"
-import { fileURLToPath, pathToFileURL } from "node:url"
+import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
