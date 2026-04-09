@@ -36,6 +36,24 @@ describe("cli", () => {
     expect(statusCommand).toHaveBeenCalledOnce()
   })
 
+  it("parses --dry-run flag and passes it through to runCommand options", async () => {
+    const runCommand = vi.fn().mockResolvedValue(undefined)
+
+    await cli({
+      argv: ["run", "42", "--dry-run"],
+      commands: {
+        run: runCommand,
+        status: vi.fn(),
+        revert: vi.fn(),
+        init: vi.fn(),
+      },
+    })
+
+    expect(runCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ issueNumber: 42, dryRun: true }),
+    )
+  })
+
   it("routes 'revert <number>' to revertCommand with parsed issue number", async () => {
     const revertCommand = vi.fn().mockResolvedValue(undefined)
 

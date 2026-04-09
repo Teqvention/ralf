@@ -1,5 +1,5 @@
 interface CliCommands {
-  run: (opts: { issueNumber: number }) => Promise<void>;
+  run: (opts: { issueNumber: number; dryRun?: boolean }) => Promise<void>;
   status: () => Promise<void>;
   revert: (opts: { issueNumber: number }) => Promise<void>;
   init: () => Promise<void>;
@@ -16,7 +16,8 @@ export async function cli({ argv, commands }: CliOptions): Promise<void> {
   switch (command) {
     case "run": {
       const issueNumber = Number(args[0]);
-      await commands.run({ issueNumber });
+      const dryRun = args.includes("--dry-run");
+      await commands.run({ issueNumber, ...(dryRun && { dryRun }) });
       break;
     }
     case "status": {
