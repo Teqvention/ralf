@@ -2,7 +2,8 @@ import { describe, it, expect, afterEach } from "vitest"
 import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { acquireLock } from "../src/project-state/index.js"
+import { existsSync } from "node:fs"
+import { acquireLock, releaseLock } from "../src/project-state/index.js"
 
 describe("acquireLock", () => {
   let tempDir: string
@@ -64,5 +65,31 @@ describe("acquireLock", () => {
     expect(error).toBeInstanceOf(Error)
     expect((error as Error).message).toMatch(/lock/i)
     expect((error as Error).message).toMatch(String(process.pid))
+  })
+})
+
+describe("releaseLock", () => {
+  let tempDir: string
+
+  afterEach(() => {
+    if (tempDir) {
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it("removes .ralf/.lock file", async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "ralf-lock-test-"))
+    const ralfDir = join(tempDir, ".ralf")
+    mkdirSync(ralfDir, { recursive: true })
+
+    // Acquire a lock first so there's a .lock file to remove
+    await acquireLock({ projectDir: tempDir })
+    const lockPath = join(ralfDir, ".lock")
+    expect(existsSync(lockPath)).toBe(true)
+
+    // Release should remove the lock file
+    await releaseLock({ projectDir: tempDir })
+
+    expect(existsSync(lockPath)).toBe(false)
   })
 })

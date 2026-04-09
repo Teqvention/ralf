@@ -1,7 +1,7 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-interface AcquireLockOptions {
+interface LockOptions {
   projectDir: string;
   force?: boolean;
 }
@@ -15,7 +15,7 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-export async function acquireLock({ projectDir, force }: AcquireLockOptions): Promise<void> {
+export async function acquireLock({ projectDir, force }: LockOptions): Promise<void> {
   const lockPath = join(projectDir, ".ralf", ".lock");
   const lockData = JSON.stringify({
     pid: process.pid,
@@ -39,4 +39,9 @@ export async function acquireLock({ projectDir, force }: AcquireLockOptions): Pr
     }
     throw err;
   }
+}
+
+export async function releaseLock({ projectDir }: Pick<LockOptions, "projectDir">): Promise<void> {
+  const lockPath = join(projectDir, ".ralf", ".lock");
+  rmSync(lockPath, { force: true });
 }
