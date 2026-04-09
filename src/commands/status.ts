@@ -18,7 +18,11 @@ interface StatusCommandOptions {
   ui: StatusUI;
 }
 
-export async function statusCommand({ state, ui }: StatusCommandOptions): Promise<void> {
-  const counts = await state.getStatusCounts();
+export async function statusCommand({ config, state, ui }: StatusCommandOptions): Promise<void> {
+  const rawCounts = await state.getStatusCounts();
+  const counts: Record<string, number> = {};
+  for (const label of Object.values(config.statuses)) {
+    counts[label] = rawCounts[label] ?? 0;
+  }
   ui.emit({ type: "status", counts });
 }

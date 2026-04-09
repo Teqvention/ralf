@@ -47,4 +47,43 @@ describe("statusCommand", () => {
       }),
     )
   })
+
+  it("displays zero counts for statuses with no issues", async () => {
+    // When the backend only returns statuses that have issues,
+    // the command should still include all configured statuses with zero counts
+    const mockState = {
+      getStatusCounts: vi.fn().mockResolvedValue({
+        "In Progress": 2,
+      }),
+    }
+
+    const mockUI = {
+      emit: vi.fn(),
+    }
+
+    const config = {
+      repo: "org/repo",
+      projectNumber: 1,
+      statuses: {
+        todo: "Ready",
+        inProgress: "In Progress",
+        inReview: "In Review",
+        done: "Done",
+        stuck: "Stuck",
+      },
+    }
+
+    await statusCommand({ config, state: mockState, ui: mockUI })
+
+    const emittedEvent = mockUI.emit.mock.calls[0][0] as { type: string; counts: Record<string, number> }
+    expect(emittedEvent.type).toBe("status")
+    // All configured statuses should appear in the counts, defaulting to 0
+    expect(emittedEvent.counts).toEqual({
+      "Ready": 0,
+      "In Progress": 2,
+      "In Review": 0,
+      "Done": 0,
+      "Stuck": 0,
+    })
+  })
 })
