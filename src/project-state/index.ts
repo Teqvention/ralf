@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 interface AcquireLockOptions {
   projectDir: string;
+  force?: boolean;
 }
 
 function isProcessAlive(pid: number): boolean {
@@ -14,7 +15,7 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-export async function acquireLock({ projectDir }: AcquireLockOptions): Promise<void> {
+export async function acquireLock({ projectDir, force }: AcquireLockOptions): Promise<void> {
   const lockPath = join(projectDir, ".ralf", ".lock");
   const lockData = JSON.stringify({
     pid: process.pid,
@@ -26,7 +27,7 @@ export async function acquireLock({ projectDir }: AcquireLockOptions): Promise<v
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === "EEXIST") {
       const existing = JSON.parse(readFileSync(lockPath, "utf-8"));
-      if (isProcessAlive(existing.pid)) {
+      if (isProcessAlive(existing.pid) && !force) {
         throw new Error(
           `Lock held by running process ${existing.pid} (since ${existing.timestamp}). Another ralf instance is already running.`,
           { cause: err },
