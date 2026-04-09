@@ -38,5 +38,7 @@ export async function revertCommand({ state, ui, issueNumber }: RevertCommandOpt
 
   if (answer === "confirmed") {
     await state.revertIssue(issueNumber);
+  } else {
+    ui.emit({ type: "revert-aborted", issueNumber });
   }
 }
