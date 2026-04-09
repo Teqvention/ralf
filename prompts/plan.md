@@ -1,3 +1,7 @@
+---
+requires: [RALF_MD, ISSUE_TITLE, ISSUE_BODY]
+---
+
 # TDD Planning: Research, Explore, Plan
 
 {{RALF_MD}}
@@ -18,12 +22,13 @@
 
 ## Phase 1: Research
 
-Fetch documentation for every library/dependency relevant to this issue.
+Focus research on what THIS issue actually needs. Don't fetch docs for every dependency.
 
 1. Read RALF.md — if it has a Documentation section, fetch each URL via WebFetch
-2. Read package.json — identify dependencies relevant to this issue
-3. WebSearch + WebFetch best practices and API docs for those dependencies
-4. Note key API patterns, gotchas, and recommended approaches
+2. Read AGENTS.md / CLAUDE.md — follow any instructions about docs to read
+3. Read package.json — identify ONLY dependencies relevant to THIS issue
+4. For those dependencies: WebSearch + WebFetch API docs, patterns, known gotchas
+5. STOP when you have enough to plan — 3-5 key findings is plenty
 
 ## Phase 2: Explore
 
@@ -43,7 +48,25 @@ Based on your research and exploration, output the plan.
 3. Summarize key doc findings that RED/GREEN agents need to know
 4. List the behaviors to test — describe WHAT the system does, not HOW
 5. Order behaviors so each builds on the previous (tracer bullet first)
-6. Include an E2E behavior as the final slice if applicable
+6. Always include at least one E2E behavior as the final slice. The E2E test exercises the full critical path end-to-end (e.g. HTTP request → handler → database → response, or CLI command → output). Only omit E2E if the issue is purely internal (type refactor, config change, dev tooling) with zero user-facing surface.
+
+## Slicing Strategy
+
+Use vertical slicing — each behavior cuts through ONE complete path from input to output.
+
+GOOD slices (vertical — each is testable end-to-end):
+  1. "user can create a project with a name" → validates input, stores, returns
+  2. "user sees error for duplicate project name" → builds on slice 1
+  3. "user can list projects sorted by creation date" → new read path
+
+BAD slices (horizontal — untestable in isolation):
+  1. "add Project type definition" → just types, nothing to test
+  2. "implement storage layer" → no entry point to exercise it
+  3. "wire up CLI command" → depends on 1 and 2 existing
+
+The first slice is the tracer bullet — pick the thinnest path through the system that proves the architecture works. If that slice fails, the plan is wrong.
+
+Focus on the critical path: what MUST work for the feature to be usable? Complex edge cases and error handling come after the happy path works.
 
 ## Output
 

@@ -15,7 +15,7 @@ const CheckSchema = z.object({
   command: z.string(),
 })
 
-const LabelsSchema = z.object({
+const StatusesSchema = z.object({
   todo: z.string(),
   inProgress: z.string(),
   inReview: z.string(),
@@ -28,12 +28,12 @@ const AgentsSchema = z.object({
   review: z.object({ runtime: z.enum(["claude", "codex", "mock"]) }),
 })
 
-const DEFAULT_LABELS = {
-  todo: "todo",
-  inProgress: "in-progress",
-  inReview: "in-review",
-  done: "done",
-  stuck: "stuck",
+const DEFAULT_STATUSES = {
+  todo: "Ready",
+  inProgress: "In progress",
+  inReview: "In review",
+  done: "Done",
+  stuck: "Backlog",
 }
 
 const DEFAULT_AGENTS = {
@@ -43,20 +43,26 @@ const DEFAULT_AGENTS = {
 
 export const ConfigSchema = z.object({
   repo: z.string().regex(/^[^/]+\/[^/]+$/, "Must be in 'owner/repo' format"),
+  projectNumber: z.number().int().min(1),
   checks: z.array(CheckSchema).min(1),
-  labels: LabelsSchema.optional(),
+  statuses: StatusesSchema.optional(),
   agents: AgentsSchema.optional(),
   maxIterationsPerIssue: z.number().int().min(1).max(10).optional(),
+  issueTimeoutMinutes: z.number().int().min(1).max(120).optional(),
 })
 
 type AgentRuntime = "claude" | "codex" | "mock"
 
+export type Statuses = { todo: string; inProgress: string; inReview: string; done: string; stuck: string }
+
 export type RalfConfig = {
   repo: string
+  projectNumber: number
   checks: { name: string; command: string }[]
-  labels: { todo: string; inProgress: string; inReview: string; done: string; stuck: string }
+  statuses: Statuses
   agents: { tdd: { runtime: AgentRuntime }; review: { runtime: AgentRuntime } }
   maxIterationsPerIssue: number
+  issueTimeoutMinutes: number
 }
 
 // --- defineConfig ---
@@ -93,13 +99,15 @@ export function validateConfig(raw: unknown): RalfConfig {
   const data = result.data
   return {
     repo: data.repo,
+    projectNumber: data.projectNumber,
     checks: data.checks,
-    labels: { ...DEFAULT_LABELS, ...data.labels },
+    statuses: { ...DEFAULT_STATUSES, ...data.statuses },
     agents: {
       tdd: data.agents?.tdd ?? DEFAULT_AGENTS.tdd,
       review: data.agents?.review ?? DEFAULT_AGENTS.review,
     },
     maxIterationsPerIssue: data.maxIterationsPerIssue ?? 3,
+    issueTimeoutMinutes: data.issueTimeoutMinutes ?? 30,
   }
 }
 

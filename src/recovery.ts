@@ -40,7 +40,7 @@ export function selectiveStage(): void {
   execaSync("git", ["add", "-u"])
 
   // Stage new files in expected source directories
-  const sourceDirs = ["src/", "test/", "tests/", "lib/"]
+  const sourceDirs = ["src/", "test/", "tests/", "lib/", ".ralf/state/"]
   for (const dir of sourceDirs) {
     try {
       execaSync("git", ["add", dir])

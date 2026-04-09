@@ -24,6 +24,20 @@ export function runPreflight(): PreflightCheck[] {
   checks.push(checkCommand("git", ["--version"], "git"))
   checks.push(checkCommand("claude", ["--version"], "claude CLI"))
 
+  // Check claude auth status (zero-token check)
+  try {
+    const result = execaSync("claude", ["--print", "--output-format", "json", "--max-turns", "0", "-p", "test"], { timeout: 10_000 })
+    const json = JSON.parse(result.stdout)
+    if (json.is_error && /not logged in|login|auth/i.test(json.result)) {
+      checks.push({ name: "claude auth", ok: false, message: "Not logged in. Run 'claude /login' first." })
+    } else {
+      checks.push({ name: "claude auth", ok: true, message: "authenticated" })
+    }
+  } catch {
+    // --max-turns 0 may error, but if claude CLI exists and auth works it won't be an auth error
+    checks.push({ name: "claude auth", ok: true, message: "assumed authenticated (verify with 'claude /login' if issues)" })
+  }
+
   // Check GITHUB_TOKEN is set
   if (process.env.GITHUB_TOKEN) {
     checks.push({ name: "GITHUB_TOKEN", ok: true, message: "available" })

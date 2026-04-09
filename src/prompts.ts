@@ -2,12 +2,38 @@
  * Prompt loading and hydration.
  *
  * Loads .md prompt templates from .ralf/prompts/ (or built-in defaults),
- * hydrates {{VAR}} placeholders with provided values.
+ * parses YAML frontmatter for required variables, validates and hydrates
+ * {{VAR}} placeholders with provided values.
  */
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 
 const BUILTIN_PROMPTS_DIR = join(import.meta.dirname, "..", "prompts")
+
+const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/
+const REQUIRES_RE = /requires:\s*\[([^\]]*)\]/
+
+/**
+ * Parse YAML frontmatter from a template string.
+ * Returns the required variable names and the template body (without frontmatter).
+ */
+export function parseFrontmatter(raw: string): { requires: string[]; body: string } {
+  const match = raw.match(FRONTMATTER_RE)
+  if (!match) return { requires: [], body: raw }
+
+  const frontmatter = match[1]
+  const body = raw.slice(match[0].length)
+
+  const reqMatch = frontmatter.match(REQUIRES_RE)
+  if (!reqMatch) return { requires: [], body }
+
+  const requires = reqMatch[1]
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+  return { requires, body }
+}
 
 /**
  * Load a prompt template by name.
@@ -29,11 +55,19 @@ export function loadPrompt(name: string, projectDir: string = process.cwd()): st
 
 /**
  * Hydrate a prompt template by replacing {{KEY}} placeholders.
+ * Parses frontmatter to validate all required variables are provided.
  */
 export function hydrate(template: string, vars: Record<string, string>): string {
+  const { requires, body } = parseFrontmatter(template)
+
+  const missing = requires.filter((key) => !(key in vars))
+  if (missing.length > 0) {
+    throw new Error(`Missing required prompt variables: ${missing.join(", ")}`)
+  }
+
   return Object.entries(vars).reduce(
     (result, [key, value]) => result.replaceAll(`{{${key}}}`, value),
-    template,
+    body,
   )
 }
 

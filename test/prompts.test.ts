@@ -2,7 +2,29 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { loadPrompt, hydrate, loadRalfMd } from "../src/prompts.js"
+import { loadPrompt, hydrate, parseFrontmatter, loadRalfMd } from "../src/prompts.js"
+
+describe("parseFrontmatter", () => {
+  it("extracts requires from YAML frontmatter", () => {
+    const raw = "---\nrequires: [A, B, C]\n---\nBody here"
+    const { requires, body } = parseFrontmatter(raw)
+    expect(requires).toEqual(["A", "B", "C"])
+    expect(body).toBe("Body here")
+  })
+
+  it("returns empty requires when no frontmatter", () => {
+    const { requires, body } = parseFrontmatter("Just a body")
+    expect(requires).toEqual([])
+    expect(body).toBe("Just a body")
+  })
+
+  it("returns empty requires when frontmatter has no requires field", () => {
+    const raw = "---\ntitle: test\n---\nBody"
+    const { requires, body } = parseFrontmatter(raw)
+    expect(requires).toEqual([])
+    expect(body).toBe("Body")
+  })
+})
 
 describe("hydrate", () => {
   it("replaces single variable", () => {
@@ -23,7 +45,7 @@ describe("hydrate", () => {
     expect(hydrate("{{A}} {{B}}", { A: "yes" })).toBe("yes {{B}}")
   })
 
-  it("handles empty vars", () => {
+  it("handles empty vars on template without frontmatter", () => {
     expect(hydrate("Hello {{NAME}}", {})).toBe("Hello {{NAME}}")
   })
 
@@ -34,6 +56,21 @@ describe("hydrate", () => {
   it("handles multiline templates", () => {
     const template = "Line 1: {{A}}\nLine 2: {{B}}\nLine 3: {{A}}"
     expect(hydrate(template, { A: "x", B: "y" })).toBe("Line 1: x\nLine 2: y\nLine 3: x")
+  })
+
+  it("strips frontmatter from output", () => {
+    const template = "---\nrequires: [NAME]\n---\nHello {{NAME}}"
+    expect(hydrate(template, { NAME: "World" })).toBe("Hello World")
+  })
+
+  it("throws when required variable is missing", () => {
+    const template = "---\nrequires: [A, B]\n---\n{{A}} {{B}}"
+    expect(() => hydrate(template, { A: "yes" })).toThrow("Missing required prompt variables: B")
+  })
+
+  it("throws listing all missing variables", () => {
+    const template = "---\nrequires: [X, Y, Z]\n---\ncontent"
+    expect(() => hydrate(template, {})).toThrow("Missing required prompt variables: X, Y, Z")
   })
 })
 
@@ -67,6 +104,29 @@ describe("loadPrompt", () => {
   it("throws for unknown prompt name", () => {
     expect(() => loadPrompt("nonexistent-prompt-xyz", tempDir)).toThrow("not found")
   })
+})
+
+describe("prompt contract", () => {
+  const PROMPT_NAMES = ["plan", "red", "green", "green-fix", "review"]
+
+  for (const name of PROMPT_NAMES) {
+    it(`${name}.md — frontmatter requires matches {{VAR}} usage`, () => {
+      const raw = loadPrompt(name, "nonexistent-dir-to-force-builtin")
+      const { requires, body } = parseFrontmatter(raw)
+      const usedVars = [...body.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1])
+      const uniqueUsed = [...new Set(usedVars)]
+
+      // Every declared var should appear in the body
+      for (const req of requires) {
+        expect(uniqueUsed, `${name}.md declares {{${req}}} in requires but never uses it`).toContain(req)
+      }
+
+      // Every used var should be declared in requires
+      for (const used of uniqueUsed) {
+        expect(requires, `${name}.md uses {{${used}}} but doesn't declare it in requires`).toContain(used)
+      }
+    })
+  }
 })
 
 describe("loadRalfMd", () => {

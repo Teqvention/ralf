@@ -9,32 +9,35 @@ import { validateConfig, loadConfig, defineConfig, ConfigError } from "../src/co
 describe("validateConfig", () => {
   const minimal = {
     repo: "Teqvention/ralf",
+    projectNumber: 1,
     checks: [{ name: "test", command: "pnpm test" }],
   }
 
   it("accepts minimal valid config", () => {
     const config = validateConfig(minimal)
     expect(config.repo).toBe("Teqvention/ralf")
+    expect(config.projectNumber).toBe(1)
     expect(config.checks).toHaveLength(1)
     expect(config.maxIterationsPerIssue).toBe(3) // default
-    expect(config.labels.todo).toBe("todo") // default
+    expect(config.statuses.todo).toBe("Ready") // default
     expect(config.agents.tdd.runtime).toBe("claude") // default
   })
 
   it("accepts full config", () => {
     const full = {
       repo: "org/project",
+      projectNumber: 3,
       checks: [
         { name: "typecheck", command: "pnpm typecheck" },
         { name: "lint", command: "pnpm lint" },
         { name: "test", command: "pnpm test" },
       ],
-      labels: {
-        todo: "backlog",
-        inProgress: "wip",
-        inReview: "review",
-        done: "shipped",
-        stuck: "blocked",
+      statuses: {
+        todo: "Backlog",
+        inProgress: "WIP",
+        inReview: "Review",
+        done: "Shipped",
+        stuck: "Blocked",
       },
       agents: {
         tdd: { runtime: "claude" as const },
@@ -44,29 +47,35 @@ describe("validateConfig", () => {
     }
     const config = validateConfig(full)
     expect(config.repo).toBe("org/project")
+    expect(config.projectNumber).toBe(3)
     expect(config.checks).toHaveLength(3)
-    expect(config.labels.todo).toBe("backlog")
+    expect(config.statuses.todo).toBe("Backlog")
     expect(config.agents.review.runtime).toBe("codex")
     expect(config.maxIterationsPerIssue).toBe(5)
   })
 
   it("rejects missing repo", () => {
-    expect(() => validateConfig({ checks: [{ name: "t", command: "t" }] }))
+    expect(() => validateConfig({ projectNumber: 1, checks: [{ name: "t", command: "t" }] }))
       .toThrow(ConfigError)
   })
 
   it("rejects invalid repo format", () => {
-    expect(() => validateConfig({ repo: "invalid", checks: [{ name: "t", command: "t" }] }))
+    expect(() => validateConfig({ repo: "invalid", projectNumber: 1, checks: [{ name: "t", command: "t" }] }))
       .toThrow("owner/repo")
   })
 
   it("rejects empty checks", () => {
-    expect(() => validateConfig({ repo: "a/b", checks: [] }))
+    expect(() => validateConfig({ repo: "a/b", projectNumber: 1, checks: [] }))
       .toThrow(ConfigError)
   })
 
   it("rejects missing checks", () => {
-    expect(() => validateConfig({ repo: "a/b" }))
+    expect(() => validateConfig({ repo: "a/b", projectNumber: 1 }))
+      .toThrow(ConfigError)
+  })
+
+  it("rejects missing projectNumber", () => {
+    expect(() => validateConfig({ repo: "a/b", checks: [{ name: "t", command: "t" }] }))
       .toThrow(ConfigError)
   })
 
@@ -95,6 +104,17 @@ describe("validateConfig", () => {
   it("rejects null input", () => {
     expect(() => validateConfig(null)).toThrow(ConfigError)
   })
+
+  it("uses default statuses when not provided", () => {
+    const config = validateConfig(minimal)
+    expect(config.statuses).toEqual({
+      todo: "Ready",
+      inProgress: "In progress",
+      inReview: "In review",
+      done: "Done",
+      stuck: "Backlog",
+    })
+  })
 })
 
 // --- defineConfig ---
@@ -103,6 +123,7 @@ describe("defineConfig", () => {
   it("passes through config object", () => {
     const input = {
       repo: "a/b",
+      projectNumber: 1,
       checks: [{ name: "test", command: "npm test" }],
     }
     expect(defineConfig(input)).toBe(input)
@@ -127,6 +148,7 @@ describe("loadConfig", () => {
     mkdirSync(ralfDir, { recursive: true })
     writeFileSync(join(ralfDir, "config.json"), JSON.stringify({
       repo: "Teqvention/ralf",
+      projectNumber: 1,
       checks: [{ name: "test", command: "vitest run" }],
     }))
 

@@ -18,6 +18,13 @@ export default tseslint.config(
     },
   },
   {
+    files: ["test/**/*.ts"],
+    rules: {
+      "require-yield": "off",
+      "@typescript-eslint/no-non-null-assertion": "off",
+    },
+  },
+  {
     ignores: ["node_modules/", "dist/", "docs/"],
   },
 )

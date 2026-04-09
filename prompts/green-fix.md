@@ -1,3 +1,7 @@
+---
+requires: [RALF_MD, ISSUE_TITLE, ISSUE_BODY, ARCH_BRIEF, FIX_ITEMS]
+---
+
 # Fix Review Items
 
 {{RALF_MD}}
@@ -25,6 +29,13 @@
 - Fix ALL typecheck and lint errors — including pre-existing ones if they block the build
 - No placeholders, no TODO comments
 - Search before assuming something is missing
+
+## Design Reminders
+
+When fixing, keep these in mind:
+- Deep modules: if the fix makes an interface wider, you're going the wrong direction
+- Return results instead of side effects: prefer `{ ok, error }` over throwing
+- Accept dependencies as parameters: don't hardcode what could be injected
 
 ## Your Task
 

@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 
 import { fork } from "node:child_process"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { dirname, join } from "node:path"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ralfTs = join(__dirname, "..", "ralf.ts")
+const tsxEsm = pathToFileURL(join(__dirname, "..", "node_modules", "tsx", "dist", "esm", "index.mjs")).href
 
 const child = fork(ralfTs, process.argv.slice(2), {
-  execArgv: ["--import", "tsx/esm"],
+  execArgv: ["--import", tsxEsm],
   stdio: "inherit",
 })
 

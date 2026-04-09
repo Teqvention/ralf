@@ -1,5 +1,5 @@
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { resolve, join } from "node:path";
 const envPath = resolve(import.meta.dirname, ".env");
 if (existsSync(envPath)) process.loadEnvFile(envPath);
 
@@ -14,28 +14,31 @@ import {
 } from "./src/validation.js";
 import { runPreflight, preflightPassed } from "./src/preflight.js";
 import { loadPrompt, hydrate, loadRalfMd } from "./src/prompts.js";
-import { loadConfig, type RalfConfig } from "./src/config.js";
+import { loadConfig, type RalfConfig, type Statuses } from "./src/config.js";
 import {
   getCompletedBehaviors,
   selectiveStage,
   branchExists,
 } from "./src/recovery.js";
 import * as github from "./src/github.js";
+import { topologicalSort } from "./src/ordering.js";
+import { TokenTracker } from "./src/tokens.js";
 
 // Fallback defaults when no .ralf/config.json exists
 const FALLBACK_REPO = "Teqvention/ralf";
 const FALLBACK_CHECKS = ["npm run typecheck", "npm run lint", "npm run test"];
 const FALLBACK_MAX_ITER = 3;
-const FALLBACK_LABELS = {
-  todo: "todo",
-  inProgress: "in-progress",
-  inReview: "in-review",
-  done: "done",
-  stuck: "stuck",
+const FALLBACK_STATUSES: Statuses = {
+  todo: "Ready",
+  inProgress: "In progress",
+  inReview: "In review",
+  done: "Done",
+  stuck: "Backlog",
 };
+const FALLBACK_PROJECT_NUMBER = 1;
+const FALLBACK_TIMEOUT_MIN = 30;
 
 type Issue = github.Issue;
-type Labels = typeof FALLBACK_LABELS;
 
 // --- helpers ---
 
@@ -46,16 +49,47 @@ function sleep(ms: number): Promise<void> {
 const USAGE_LIMIT_WAIT_MS = 10 * 60 * 1000; // 10 minutes
 const USAGE_LIMIT_MAX_RETRIES = 5;
 
-async function claude(prompt: string): Promise<string> {
+let sessionId: string | null = null;
+
+const tokenTracker = new TokenTracker();
+
+interface ClaudeResponse {
+  result: string;
+  tokensIn: number;
+  tokensOut: number;
+}
+
+async function claude(prompt: string): Promise<ClaudeResponse> {
   for (let attempt = 0; attempt <= USAGE_LIMIT_MAX_RETRIES; attempt++) {
     try {
-      console.log("  ◌ calling claude...");
-      const { stdout } = await execa(
-        "claude",
-        ["--print", "--dangerously-skip-permissions", "-p", prompt],
-        { timeout: 30 * 60 * 1000 },
-      );
-      return stdout;
+      const args = [
+        "--print",
+        "--dangerously-skip-permissions",
+        "--output-format", "json",
+        "--max-turns", "50",
+      ];
+      if (sessionId) args.push("--resume", sessionId);
+      console.log("  ◌ calling claude..." + (sessionId ? " (session " + sessionId.slice(0, 8) + ")" : ""));
+
+      const { stdout } = await execa("claude", args, { input: prompt, timeout: 30 * 60 * 1000 });
+      const json = JSON.parse(stdout) as {
+        result: string;
+        session_id: string;
+        is_error: boolean;
+        input_tokens?: number;
+        output_tokens?: number;
+      };
+      sessionId = json.session_id;
+      if (json.is_error) {
+        const isAuthError = /not logged in|login|auth/i.test(json.result);
+        if (isAuthError) {
+          throw new Error("Claude CLI not logged in. Run 'claude /login' first, then retry.");
+        }
+        throw new Error(json.result);
+      }
+      const tokensIn = json.input_tokens ?? 0;
+      const tokensOut = json.output_tokens ?? 0;
+      return { result: json.result, tokensIn, tokensOut };
     } catch (e: unknown) {
       const msg = formatError(e);
       const isUsageLimit =
@@ -80,6 +114,10 @@ async function claude(prompt: string): Promise<string> {
     }
   }
   throw new Error("unreachable");
+}
+
+function resetSession(): void {
+  sessionId = null;
 }
 
 function git(...args: string[]): string {
@@ -110,24 +148,34 @@ async function fetchIssue(n: number, repo: string): Promise<Issue> {
   return github.fetchIssue(n, repo);
 }
 
-async function setLabel(
+async function setStatus(
   n: number,
-  label: string,
+  statusName: string,
   repo: string,
-  labels: Labels,
+  projectNumber: number,
 ): Promise<void> {
-  const allLabels = [
-    labels.todo,
-    labels.inProgress,
-    labels.inReview,
-    labels.done,
-    labels.stuck,
-  ];
-  await github.setLabel(n, label, repo, allLabels);
+  await github.setIssueStatus(n, statusName, repo, projectNumber);
 }
 
 function formatError(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/**
+ * Extract a condensed issue summary for post-plan phases.
+ * Keeps title + acceptance criteria, drops verbose context.
+ */
+function condensedIssue(issue: Issue): Issue {
+  const body = issue.body;
+  // Extract checkbox/acceptance criteria lines
+  const criteria = body
+    .split("\n")
+    .filter((l) => /^\s*-\s*\[[ x]\]/i.test(l))
+    .join("\n");
+  const summary = criteria
+    ? "Acceptance criteria:\n" + criteria
+    : body.slice(0, 500);
+  return { title: issue.title, body: summary };
 }
 
 // --- prompts ---
@@ -146,6 +194,7 @@ function redPrompt(
   allBehaviors: string,
   archBrief: string,
   ralfMd: string,
+  retryContext: string = "",
 ): string {
   return hydrate(loadPrompt("red"), {
     RALF_MD: ralfMd,
@@ -155,6 +204,7 @@ function redPrompt(
     BEHAVIOR_NAME: behavior.name,
     BEHAVIOR_TYPE: behavior.type,
     ALL_BEHAVIORS: allBehaviors,
+    RED_RETRY_CONTEXT: retryContext,
   });
 }
 
@@ -164,6 +214,7 @@ function greenPrompt(
   errors: string,
   archBrief: string,
   ralfMd: string,
+  testFiles: string = "",
 ): string {
   const errorsSection = errors
     ? "## PREVIOUS FAILURES — FIX THESE FIRST\n\nThe last attempt failed checks. Fix these errors before doing anything else:\n\n" +
@@ -176,6 +227,7 @@ function greenPrompt(
     ARCH_BRIEF: archBrief,
     BEHAVIOR_NAME: behavior.name,
     ERRORS_SECTION: errorsSection,
+    TEST_FILES: testFiles || "(explore the test directory to find the failing test)",
   });
 }
 
@@ -195,12 +247,48 @@ function greenFixPrompt(
   });
 }
 
-function reviewPrompt(issue: Issue, diff: string, ralfMd: string): string {
+const DIFF_MAX_LINES = 500;
+
+function truncateDiff(diff: string): { diff: string; stat: string } {
+  let stat: string;
+  try {
+    stat = git("diff", "--stat", "dev...HEAD");
+  } catch {
+    try {
+      stat = git("diff", "--stat", "HEAD~1");
+    } catch {
+      stat = "(diff stat unavailable)";
+    }
+  }
+
+  const lines = diff.split("\n");
+  if (lines.length <= DIFF_MAX_LINES) {
+    return { diff, stat };
+  }
+
+  const truncated = lines.slice(-DIFF_MAX_LINES).join("\n");
+  return {
+    diff: `(truncated — showing last ${DIFF_MAX_LINES} of ${lines.length} lines)\n\n${truncated}`,
+    stat,
+  };
+}
+
+function reviewPrompt(
+  issue: Issue,
+  diff: string,
+  ralfMd: string,
+  archBrief: string,
+  planBehaviors: string,
+): string {
+  const { diff: truncatedDiff, stat } = truncateDiff(diff);
   return hydrate(loadPrompt("review"), {
     RALF_MD: ralfMd,
     ISSUE_TITLE: issue.title,
     ISSUE_BODY: issue.body,
-    DIFF: diff,
+    DIFF: truncatedDiff,
+    DIFF_STAT: stat,
+    ARCH_BRIEF: archBrief,
+    PLAN_BEHAVIORS: planBehaviors,
   });
 }
 
@@ -223,13 +311,32 @@ function buildArchBrief(plan: PlanResult): string {
     .join("\n");
 }
 
-function ensureDevBranch(): void {
+function commitIfDirty(issueNum: number, message: string): void {
+  const status = git("status", "--porcelain");
+  if (!status.trim()) return;
+  selectiveStage();
   try {
-    git("checkout", "dev");
-    git("pull", "origin", "dev");
+    git("commit", "-m", message);
+    console.log("  ✔ committed uncommitted changes before branch switch");
   } catch {
+    // nothing to commit after staging
+  }
+}
+
+function safeCheckout(branch: string, issueNum?: number): void {
+  if (issueNum) {
+    commitIfDirty(issueNum, "fix(#" + issueNum + "): auto-commit before branch switch");
+  }
+  git("checkout", branch);
+}
+
+function ensureDevBranch(issueNum?: number): void {
+  if (branchExists("dev")) {
+    safeCheckout("dev", issueNum);
+    try { git("pull", "origin", "dev"); } catch { /* offline or no remote */ }
+  } else {
     git("checkout", "-b", "dev");
-    git("push", "-u", "origin", "dev");
+    try { git("push", "-u", "origin", "dev"); } catch { /* offline */ }
   }
 }
 
@@ -237,7 +344,9 @@ function resolveConfig(): {
   config: RalfConfig | null;
   repo: string;
   maxIter: number;
-  labels: Labels;
+  statuses: Statuses;
+  projectNumber: number;
+  timeoutMs: number;
 } {
   let config: RalfConfig | null = null;
   try {
@@ -250,11 +359,14 @@ function resolveConfig(): {
         ")",
     );
   }
+  const timeoutMin = config?.issueTimeoutMinutes ?? FALLBACK_TIMEOUT_MIN;
   return {
     config,
     repo: config?.repo ?? FALLBACK_REPO,
     maxIter: config?.maxIterationsPerIssue ?? FALLBACK_MAX_ITER,
-    labels: config?.labels ?? FALLBACK_LABELS,
+    statuses: config?.statuses ?? FALLBACK_STATUSES,
+    projectNumber: config?.projectNumber ?? FALLBACK_PROJECT_NUMBER,
+    timeoutMs: timeoutMin * 60 * 1000,
   };
 }
 
@@ -271,16 +383,18 @@ async function runPlanPhase(
   issue: Issue,
   ralfMd: string,
   issueNum: number,
-  labels: Labels,
+  statuses: Statuses,
   repo: string,
+  projectNumber: number,
 ): Promise<PlanResult | null> {
   console.log("\n◌ plan...");
-  const planOut = await claude(planPrompt(issue, ralfMd));
-  const planRaw = parseResultTag(planOut);
+  const planResponse = await claude(planPrompt(issue, ralfMd));
+  tokenTracker.record("plan", planResponse.tokensIn, planResponse.tokensOut);
+  const planRaw = parseResultTag(planResponse.result);
   if (planRaw == null) {
     console.log("✘ Plan failed — no <result> tag found in output");
-    console.log("  Raw output (first 500 chars): " + planOut.slice(0, 500));
-    await setLabel(issueNum, labels.stuck, repo, labels);
+    console.log("  Raw output (first 500 chars): " + planResponse.result.slice(0, 500));
+    await setStatus(issueNum, statuses.stuck, repo, projectNumber);
     return null;
   }
 
@@ -291,7 +405,7 @@ async function runPlanPhase(
     console.log(
       "  Raw JSON: " + JSON.stringify(planRaw, null, 2).slice(0, 500),
     );
-    await setLabel(issueNum, labels.stuck, repo, labels);
+    await setStatus(issueNum, statuses.stuck, repo, projectNumber);
     return null;
   }
 }
@@ -319,18 +433,29 @@ async function runRedPhase(
   archBrief: string,
   ralfMd: string,
   config: RalfConfig | null,
-): Promise<boolean> {
+): Promise<{ passed: boolean; testFiles: string[] }> {
   for (let attempt = 0; attempt < 2; attempt++) {
-    const redOut = await claude(
+    const retryContext = attempt > 0
+      ? "## PREVIOUS ATTEMPT FAILED — TEST PASSED WHEN IT SHOULD HAVE FAILED\n\nThis means either:\n1. The behavior is already implemented — pick a different aspect to test\n2. Your test doesn't actually exercise the new behavior\n3. Your assertion is too weak\n\nWrite a DIFFERENT test that will genuinely fail."
+      : "";
+    const otherBehaviors = plan.behaviors
+      .filter((b) => b.name !== behavior.name)
+      .map((b) => "- " + b.name + " (" + b.type + ")")
+      .join("\n");
+    // Skip RALF.md on retries — already in session context
+    const redResponse = await claude(
       redPrompt(
         issue,
         behavior,
-        JSON.stringify(plan.behaviors, null, 2),
+        otherBehaviors,
         archBrief,
-        ralfMd,
+        attempt > 0 ? "" : ralfMd,
+        retryContext,
       ),
     );
-    validateAgentOutput(parseResultTag(redOut), "RED");
+    tokenTracker.record("red", redResponse.tokensIn, redResponse.tokensOut, behavior.name);
+    const redResult = parseResultTag(redResponse.result);
+    validateAgentOutput(redResult, "RED");
 
     const testCheck = runChecks(config);
     if (testCheck.ok) {
@@ -339,9 +464,10 @@ async function runRedPhase(
       continue;
     }
     console.log("  ✔ RED Gate — test fails correctly");
-    return true;
+    const testFiles = (redResult as { testFiles?: string[] })?.testFiles ?? [];
+    return { passed: true, testFiles };
   }
-  return false;
+  return { passed: false, testFiles: [] };
 }
 
 async function runGreenPhase(
@@ -351,13 +477,17 @@ async function runGreenPhase(
   ralfMd: string,
   config: RalfConfig | null,
   issueNum: number,
+  testFiles: string[] = [],
 ): Promise<boolean> {
   let errors = "";
+  const testFilesStr = testFiles.length > 0 ? testFiles.join(", ") : "";
   for (let attempt = 0; attempt < 2; attempt++) {
-    const greenOut = await claude(
-      greenPrompt(issue, behavior, errors, archBrief, ralfMd),
+    // Skip RALF.md on retries — already in session context
+    const greenResponse = await claude(
+      greenPrompt(issue, behavior, errors, archBrief, attempt > 0 ? "" : ralfMd, testFilesStr),
     );
-    validateAgentOutput(parseResultTag(greenOut), "GREEN");
+    tokenTracker.record("green", greenResponse.tokensIn, greenResponse.tokensOut, behavior.name);
+    validateAgentOutput(parseResultTag(greenResponse.result), "GREEN");
 
     const checks = runChecks(config);
     if (checks.ok) {
@@ -408,7 +538,8 @@ async function runTddSlices(
     }
 
     console.log("\n◌ red " + progress + ": " + behavior.name);
-    const redPassed = await runRedPhase(
+    resetSession();
+    const redResult = await runRedPhase(
       issue,
       behavior,
       plan,
@@ -416,12 +547,13 @@ async function runTddSlices(
       ralfMd,
       config,
     );
-    if (!redPassed) {
+    if (!redResult.passed) {
       console.log("  ⚠ Skipping behavior — could not write failing test");
       continue;
     }
 
     console.log("\n◌ green " + progress + ": " + behavior.name);
+    resetSession();
     const greenPassed = await runGreenPhase(
       issue,
       behavior,
@@ -429,6 +561,7 @@ async function runTddSlices(
       ralfMd,
       config,
       issueNum,
+      redResult.testFiles,
     );
     if (!greenPassed) {
       console.log(
@@ -442,20 +575,29 @@ interface ReviewContext {
   issue: Issue;
   ralfMd: string;
   archBrief: string;
+  planBehaviors: string;
   config: RalfConfig | null;
   issueNum: number;
   branchName: string;
   maxIter: number;
-  labels: Labels;
+  statuses: Statuses;
   repo: string;
+  projectNumber: number;
 }
 
 async function runReviewLoop(ctx: ReviewContext): Promise<void> {
+  if (isReviewApproved(ctx.issueNum)) {
+    console.log("\n  ⊘ review already approved — merging");
+    await mergeAndClose(ctx.issueNum, ctx.branchName, "(previously approved)", ctx.statuses, ctx.repo, ctx.projectNumber);
+    return;
+  }
+
   for (let iter = 1; iter <= ctx.maxIter; iter++) {
     const iterSuffix =
       iter > 1 ? " (iteration " + iter + "/" + ctx.maxIter + ")" : "";
     console.log("\n◌ review" + iterSuffix + "...");
-    await setLabel(ctx.issueNum, ctx.labels.inReview, ctx.repo, ctx.labels);
+    resetSession();
+    await setStatus(ctx.issueNum, ctx.statuses.inReview, ctx.repo, ctx.projectNumber);
 
     let diff: string;
     try {
@@ -464,8 +606,9 @@ async function runReviewLoop(ctx: ReviewContext): Promise<void> {
       diff = git("diff", "HEAD~1");
     }
 
-    const reviewOut = await claude(reviewPrompt(ctx.issue, diff, ctx.ralfMd));
-    const reviewRaw = parseResultTag(reviewOut);
+    const reviewResponse = await claude(reviewPrompt(ctx.issue, diff, ctx.ralfMd, ctx.archBrief, ctx.planBehaviors));
+    tokenTracker.record("review", reviewResponse.tokensIn, reviewResponse.tokensOut);
+    const reviewRaw = parseResultTag(reviewResponse.result);
 
     if (reviewRaw == null) {
       console.log("  ✘ Review failed — no <result> tag found");
@@ -481,12 +624,16 @@ async function runReviewLoop(ctx: ReviewContext): Promise<void> {
     }
 
     if (review.verdict === "approved") {
+      saveReviewApproved(ctx.issueNum, review.notes || "");
+      selectiveStage();
+      try { git("commit", "-m", "review(#" + ctx.issueNum + "): approved"); } catch { /* nothing to commit */ }
       await mergeAndClose(
         ctx.issueNum,
         ctx.branchName,
         review.notes || "",
-        ctx.labels,
+        ctx.statuses,
         ctx.repo,
+        ctx.projectNumber,
       );
       return;
     }
@@ -505,7 +652,7 @@ async function runReviewLoop(ctx: ReviewContext): Promise<void> {
     }
   }
 
-  await setLabel(ctx.issueNum, ctx.labels.stuck, ctx.repo, ctx.labels);
+  await setStatus(ctx.issueNum, ctx.statuses.stuck, ctx.repo, ctx.projectNumber);
   console.log(
     "\n⚠ Issue #" +
       ctx.issueNum +
@@ -519,17 +666,30 @@ async function mergeAndClose(
   issueNum: number,
   branchName: string,
   notes: string,
-  labels: Labels,
+  statuses: Statuses,
   repo: string,
-): Promise<void> {
+  projectNumber: number,
+): Promise<boolean> {
   console.log("  ✔ APPROVED: " + notes);
-  git("checkout", "dev");
-  git("merge", branchName);
+  safeCheckout("dev", issueNum);
+  try {
+    git("merge", branchName);
+  } catch (e: unknown) {
+    console.log("  ✘ Merge conflict on " + branchName + " → dev");
+    console.log("  " + formatError(e));
+    try { git("merge", "--abort"); } catch { /* already clean */ }
+    safeCheckout(branchName);
+    await setStatus(issueNum, statuses.stuck, repo, projectNumber);
+    console.log("  ⚠ Issue #" + issueNum + " stuck — merge conflict needs manual resolution");
+    return false;
+  }
   git("branch", "-d", branchName);
   git("push", "origin", "dev");
-  await setLabel(issueNum, labels.done, repo, labels);
+  await setStatus(issueNum, statuses.done, repo, projectNumber);
   await github.closeIssue(issueNum, repo);
   console.log("\n✔ Issue #" + issueNum + " complete → merged to dev, pushed");
+  console.log("  " + tokenTracker.formatIssueUsage(issueNum));
+  return true;
 }
 
 function logNeedsFixes(fixItems: string[]): void {
@@ -548,10 +708,12 @@ async function runGreenFix(
   issueNum: number,
 ): Promise<void> {
   console.log("\n◌ green-fix (fixing " + fixItems.length + " items)...");
-  const fixOut = await claude(
+  resetSession();
+  const fixResponse = await claude(
     greenFixPrompt(issue, fixItems, archBrief, ralfMd),
   );
-  validateAgentOutput(parseResultTag(fixOut), "GREEN-FIX");
+  tokenTracker.record("green-fix", fixResponse.tokensIn, fixResponse.tokensOut);
+  validateAgentOutput(parseResultTag(fixResponse.result), "GREEN-FIX");
 
   const fixChecks = runChecks(config);
   if (fixChecks.ok) {
@@ -563,6 +725,51 @@ async function runGreenFix(
   }
 }
 
+// --- state persistence ---
+
+function stateDir(issueNum: number): string {
+  return join(".ralf", "state", String(issueNum));
+}
+
+function saveState(issueNum: number, name: string, data: unknown): void {
+  const dir = stateDir(issueNum);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, name + ".json"), JSON.stringify(data, null, 2));
+}
+
+function loadState<T>(issueNum: number, name: string): T | null {
+  const path = join(stateDir(issueNum), name + ".json");
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, "utf-8")) as T;
+  } catch {
+    return null;
+  }
+}
+
+function savePlan(issueNum: number, plan: PlanResult): void {
+  saveState(issueNum, "plan", plan);
+}
+
+function loadSavedPlan(issueNum: number): PlanResult | null {
+  const raw = loadState(issueNum, "plan");
+  if (!raw) return null;
+  try {
+    return validatePlan(raw);
+  } catch {
+    return null;
+  }
+}
+
+function saveReviewApproved(issueNum: number, notes: string): void {
+  saveState(issueNum, "review", { verdict: "approved", notes });
+}
+
+function isReviewApproved(issueNum: number): boolean {
+  const raw = loadState<{ verdict: string }>(issueNum, "review");
+  return raw?.verdict === "approved";
+}
+
 // --- main entry ---
 
 async function runSingleIssue(
@@ -570,43 +777,87 @@ async function runSingleIssue(
   config: RalfConfig | null,
   repo: string,
   maxIter: number,
-  labels: Labels,
+  statuses: Statuses,
+  projectNumber: number,
 ): Promise<void> {
+  resetSession();
   const issue = await fetchIssue(issueNum, repo);
   const ralfMd = loadRalfMd();
   const branchName = "ralf/" + issueNum;
 
   console.log("\n▶ Starting issue #" + issueNum + ": " + issue.title);
 
-  ensureDevBranch();
+  ensureDevBranch(issueNum);
 
   if (branchExists(branchName)) {
-    git("checkout", branchName);
+    safeCheckout(branchName, issueNum);
     console.log("  → resumed existing branch: " + branchName);
   } else {
     git("checkout", "-b", branchName);
   }
-  await setLabel(issueNum, labels.inProgress, repo, labels);
+  await setStatus(issueNum, statuses.inProgress, repo, projectNumber);
   console.log("  → branch: " + branchName + " (from dev)");
-  console.log("  → label: in-progress");
+  console.log("  → status: In Progress");
 
-  const plan = await runPlanPhase(issue, ralfMd, issueNum, labels, repo);
-  if (!plan) return;
+  let plan = loadSavedPlan(issueNum);
+  if (plan) {
+    console.log("  ⊘ loaded saved plan (" + plan.behaviors.length + " behaviors)");
+  } else {
+    plan = await runPlanPhase(issue, ralfMd, issueNum, statuses, repo, projectNumber);
+    if (!plan) return;
+    savePlan(issueNum, plan);
+    selectiveStage();
+    try { git("commit", "-m", "plan(#" + issueNum + "): save plan to disk"); } catch { /* nothing to commit */ }
+  }
   logPlan(plan);
 
+  // Post-plan phases use condensed issue to reduce token waste
+  const briefIssue = condensedIssue(issue);
   const archBrief = buildArchBrief(plan);
-  await runTddSlices(issue, plan, archBrief, ralfMd, config, issueNum);
+  const planBehaviors = plan.behaviors.map((b, i) => (i + 1) + ". " + b.name + " (" + b.type + ")").join("\n");
+  await runTddSlices(briefIssue, plan, archBrief, ralfMd, config, issueNum);
   await runReviewLoop({
-    issue,
+    issue: briefIssue,
     ralfMd,
     archBrief,
+    planBehaviors,
     config,
     issueNum,
     branchName,
     maxIter,
-    labels,
+    statuses,
     repo,
+    projectNumber,
   });
+}
+
+async function runWithTimeout(
+  issueNum: number,
+  config: RalfConfig | null,
+  repo: string,
+  maxIter: number,
+  statuses: Statuses,
+  projectNumber: number,
+  timeoutMs: number,
+): Promise<void> {
+  tokenTracker.startIssue(issueNum);
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error("ISSUE_TIMEOUT")), timeoutMs);
+  });
+  try {
+    await Promise.race([
+      runSingleIssue(issueNum, config, repo, maxIter, statuses, projectNumber),
+      timeoutPromise,
+    ]);
+  } catch (e: unknown) {
+    if (e instanceof Error && e.message === "ISSUE_TIMEOUT") {
+      console.log("\n⚠ Issue #" + issueNum + " timed out after " + (timeoutMs / 60000) + " minutes");
+      await setStatus(issueNum, statuses.stuck, repo, projectNumber);
+      console.log("  → status: Stuck");
+      return;
+    }
+    throw e;
+  }
 }
 
 async function run(parentIssueNum: number): Promise<void> {
@@ -621,7 +872,7 @@ async function run(parentIssueNum: number): Promise<void> {
     process.exit(1);
   }
 
-  const { config, repo, maxIter, labels } = resolveConfig();
+  const { config, repo, maxIter, statuses, projectNumber, timeoutMs } = resolveConfig();
 
   const subIssues = await github.fetchSubIssues(parentIssueNum, repo);
   if (subIssues.length === 0) {
@@ -629,20 +880,32 @@ async function run(parentIssueNum: number): Promise<void> {
     process.exit(1);
   }
 
+  // Filter out closed issues, then topological sort
+  const openIssues = subIssues.filter((s) => s.state !== "closed");
+  const skipped = subIssues.length - openIssues.length;
+
+  let ordered;
+  try {
+    ordered = topologicalSort(openIssues);
+  } catch (e: unknown) {
+    console.log("  ⚠ " + formatError(e) + " — using original order");
+    ordered = openIssues;
+  }
+
   const parent = await fetchIssue(parentIssueNum, repo);
   console.log("\n▶ Parent issue #" + parentIssueNum + ": " + parent.title);
-  console.log("  → " + subIssues.length + " sub-issues to process:");
-  for (const sub of subIssues) {
-    console.log("    #" + sub.number + " " + sub.title);
+  if (skipped > 0) {
+    console.log("  ⊘ skipping " + skipped + " already-closed issue(s)");
   }
 
-  for (let i = 0; i < subIssues.length; i++) {
-    const sub = subIssues[i];
-    console.log("\n━━━ [" + (i + 1) + "/" + subIssues.length + "] #" + sub.number + ": " + sub.title + " ━━━");
-    await runSingleIssue(sub.number, config, repo, maxIter, labels);
+  for (let i = 0; i < ordered.length; i++) {
+    const sub = ordered[i];
+    console.log("\n━━━ [" + (i + 1) + "/" + ordered.length + "] #" + sub.number + ": " + sub.title + " ━━━");
+    await runWithTimeout(sub.number, config, repo, maxIter, statuses, projectNumber, timeoutMs);
   }
 
-  console.log("\n✔ All " + subIssues.length + " sub-issues processed.");
+  console.log("\n✔ All " + ordered.length + " sub-issues processed.");
+  console.log("  " + tokenTracker.formatGrandTotal());
 }
 
 // --- status ---
@@ -655,20 +918,15 @@ async function status(): Promise<void> {
     /* use defaults */
   }
   const repo = config?.repo ?? FALLBACK_REPO;
-  const labels = config?.labels ?? FALLBACK_LABELS;
-  const labelValues = [
-    labels.todo,
-    labels.inProgress,
-    labels.inReview,
-    labels.done,
-    labels.stuck,
-  ];
+  const projectNumber = config?.projectNumber ?? FALLBACK_PROJECT_NUMBER;
+  const statuses = config?.statuses ?? FALLBACK_STATUSES;
+
+  const counts = await github.getStatusCounts(repo, projectNumber);
 
   console.log("\n┌─ ralf status ─────────────────┐");
-  for (const label of labelValues) {
-    const issues = await github.listIssuesByLabel(repo, label);
-    const count = String(issues.length).padStart(3);
-    console.log("│  " + label.padEnd(12) + " " + count + " │");
+  for (const statusName of [statuses.todo, statuses.inProgress, statuses.inReview, statuses.done, statuses.stuck]) {
+    const count = String(counts[statusName] ?? 0).padStart(3);
+    console.log("│  " + statusName.padEnd(12) + " " + count + " │");
   }
   console.log("└───────────────────────────────┘");
 }

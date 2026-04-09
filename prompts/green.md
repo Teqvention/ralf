@@ -1,3 +1,7 @@
+---
+requires: [RALF_MD, ISSUE_TITLE, ISSUE_BODY, BEHAVIOR_NAME, ARCH_BRIEF, TEST_FILES, ERRORS_SECTION]
+---
+
 # Implement Behavior
 
 {{RALF_MD}}
@@ -16,6 +20,12 @@
 
 {{BEHAVIOR_NAME}}
 
+## Failing Test
+
+The RED phase wrote a failing test at: {{TEST_FILES}}
+
+Read this test first. Your ONLY job is to make it pass.
+
 {{ERRORS_SECTION}}
 
 ## CRITICAL RULES
@@ -27,6 +37,50 @@
 - Fix ALL typecheck and lint errors — including pre-existing ones if they block the build
 - No placeholders, no TODO comments, no "will implement later"
 - Search before assuming something is missing — it might already exist
+
+## Design Principles
+
+- Deep modules: small interface, rich implementation. Hide complexity inside.
+- Return results instead of producing side effects where possible
+- Accept dependencies as parameters, don't create them internally
+
+## Design Examples
+
+GOOD — deep module (small interface, rich internals):
+```ts
+// Caller doesn't know about retries, caching, pagination
+function fetchUser(id: string): Promise<User>
+```
+
+BAD — shallow module (interface mirrors implementation):
+```ts
+// Caller manages all the complexity
+function fetchUser(id: string, retries: number, cache: Cache, page: number): Promise<User>
+```
+
+GOOD — return results, let caller decide side effects:
+```ts
+function validateConfig(input: unknown): { ok: true; config: Config } | { ok: false; errors: string[] }
+```
+
+BAD — side effects hidden inside:
+```ts
+function validateConfig(input: unknown): void {
+  if (!input.name) { console.error("missing name"); process.exit(1) }
+}
+```
+
+GOOD — accept dependencies as parameters:
+```ts
+function createServer(db: Database, logger: Logger): Server
+```
+
+BAD — create dependencies internally:
+```ts
+function createServer(): Server {
+  const db = new PostgresDB(process.env.DB_URL!)  // untestable, hardcoded
+}
+```
 
 ## Your Task
 
