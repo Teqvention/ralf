@@ -8,6 +8,8 @@ describe("revertCommand", () => {
         { hash: "abc123", message: "feat(#42): add login form" },
       ]),
       revertIssue: vi.fn().mockResolvedValue(undefined),
+      deleteBranch: vi.fn().mockResolvedValue(undefined),
+      resetLabel: vi.fn().mockResolvedValue(undefined),
     }
 
     const mockUI = {

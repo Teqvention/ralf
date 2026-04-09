@@ -6,6 +6,8 @@ interface Commit {
 interface RevertState {
   findCommitsForIssue(issueNumber: number): Promise<Commit[]>;
   revertIssue(issueNumber: number): Promise<void>;
+  deleteBranch(issueNumber: number): Promise<void>;
+  resetLabel(issueNumber: number, label: string): Promise<void>;
 }
 
 interface RevertUI {
@@ -26,7 +28,7 @@ interface RevertCommandOptions {
   issueNumber: number;
 }
 
-export async function revertCommand({ state, ui, issueNumber }: RevertCommandOptions): Promise<void> {
+export async function revertCommand({ config, state, ui, issueNumber }: RevertCommandOptions): Promise<void> {
   const commits = await state.findCommitsForIssue(issueNumber);
 
   if (commits.length === 0) {
@@ -38,6 +40,8 @@ export async function revertCommand({ state, ui, issueNumber }: RevertCommandOpt
 
   if (answer === "confirmed") {
     await state.revertIssue(issueNumber);
+    await state.deleteBranch(issueNumber);
+    await state.resetLabel(issueNumber, config.statuses.todo);
   } else {
     ui.emit({ type: "revert-aborted", issueNumber });
   }

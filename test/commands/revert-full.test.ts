@@ -2,11 +2,14 @@ import { describe, it, expect, vi } from "vitest"
 import { revertCommand } from "../../src/commands/revert.js"
 
 describe("revertCommand", () => {
-  it("aborts without changes when user declines confirmation", async () => {
+  it("reverts all commits matching feat(#N): pattern, deletes branch, and resets label to todo", async () => {
+    const commits = [
+      { hash: "abc123", message: "feat(#42): add login form" },
+      { hash: "def456", message: "feat(#42): add validation" },
+    ]
+
     const mockState = {
-      findCommitsForIssue: vi.fn().mockResolvedValue([
-        { hash: "abc123", message: "feat(#42): add login form" },
-      ]),
+      findCommitsForIssue: vi.fn().mockResolvedValue(commits),
       revertIssue: vi.fn().mockResolvedValue(undefined),
       deleteBranch: vi.fn().mockResolvedValue(undefined),
       resetLabel: vi.fn().mockResolvedValue(undefined),
@@ -14,7 +17,7 @@ describe("revertCommand", () => {
 
     const mockUI = {
       emit: vi.fn(),
-      prompt: vi.fn().mockResolvedValue("declined"),
+      prompt: vi.fn().mockResolvedValue("confirmed"),
       countdown: vi.fn(),
       collapseLastIssue: vi.fn(),
       onInterrupt: vi.fn(),
@@ -36,23 +39,13 @@ describe("revertCommand", () => {
 
     await revertCommand({ config, state: mockState, ui: mockUI, issueNumber: 42 })
 
-    // Should still prompt for confirmation
-    expect(mockUI.prompt).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "confirm-revert",
-        issueNumber: 42,
-      }),
-    )
+    // All matching commits should be reverted
+    expect(mockState.revertIssue).toHaveBeenCalledWith(42)
 
-    // User declined — revert must NOT be executed
-    expect(mockState.revertIssue).not.toHaveBeenCalled()
+    // Branch for the issue should be deleted
+    expect(mockState.deleteBranch).toHaveBeenCalledWith(42)
 
-    // Should emit an abort event so the UI can inform the user
-    expect(mockUI.emit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "revert-aborted",
-        issueNumber: 42,
-      }),
-    )
+    // Label should be reset back to todo status
+    expect(mockState.resetLabel).toHaveBeenCalledWith(42, "Ready")
   })
 })
